@@ -140,7 +140,6 @@
 <body>
 <div class="app">
 
-  <!-- Top bar -->
   <div class="topbar">
     <div class="brand">
       <div class="brand-mark"><i class="ti ti-wallet"></i></div>
@@ -152,7 +151,6 @@
     <div class="date-pill"><i class="ti ti-calendar-event"></i><span id="todayDate"></span></div>
   </div>
 
-  <!-- Hero / Reconciliation -->
   <section class="hero">
     <div class="hero-head">
       <h1>ตรวจสอบยอดเงินประจำวัน</h1>
@@ -187,10 +185,8 @@
     </div>
   </section>
 
-  <!-- Two columns -->
   <div class="cols">
 
-    <!-- Cash card -->
     <div class="card">
       <div class="card-head">
         <div class="card-icon cash"><i class="ti ti-coins"></i></div>
@@ -225,7 +221,6 @@
       </div>
     </div>
 
-    <!-- Transfer card -->
     <div class="card">
       <div class="card-head">
         <div class="card-icon transfer"><i class="ti ti-receipt"></i></div>
@@ -245,10 +240,9 @@
     </div>
   </div>
 
-  <!-- Actions -->
   <div class="actions">
     <button class="btn btn-primary" id="btnCopy"><i class="ti ti-clipboard-check"></i> คัดลอกรายงานสรุป</button>
-    <button class="btn btn-ghost" id="btnReset"><i class="ti ti-refresh"></i> ล้างข้อมูล</button>
+    <button class="btn btn-ghost" id="btnReset"><i class="ti ti-refresh"></i> ล้างข้อมูลเพื่อเริ่มวันใหม่</button>
   </div>
 </div>
 
@@ -348,11 +342,17 @@
     input.addEventListener('input', (e) => {
       formatInputWithComma(e.target);
       calcTransfer();
+      saveData(); // Save on type
     });
     
     input.addEventListener('keydown', handleTransferKey);
     
-    row.querySelector('.transfer-del').addEventListener('click', ()=>{ row.remove(); renumberTransfers(); calcTransfer(); });
+    row.querySelector('.transfer-del').addEventListener('click', ()=>{ 
+      row.remove(); 
+      renumberTransfers(); 
+      calcTransfer(); 
+      saveData(); // Save on delete
+    });
     list.appendChild(row);
     if(shouldFocus) input.focus();
   }
@@ -405,6 +405,75 @@
     }
   }
 
+  // ===== NEW FUNCTION: Save data to LocalStorage =====
+  function saveData(){
+    const data = {
+      coinsPerStack: $('coinsPerStack').value,
+      systemAmount: $('systemAmount').value,
+      denoms: [],
+      transfers: []
+    };
+
+    // Save cash denoms
+    document.querySelectorAll('.denom-row').forEach(row => {
+      const stacksEl = row.querySelector('.stacks');
+      const piecesEl = row.querySelector('.pieces');
+      data.denoms.push({
+        val: stacksEl.dataset.val,
+        stacks: stacksEl.value,
+        pieces: piecesEl.value
+      });
+    });
+
+    // Save transfer rows
+    document.querySelectorAll('.transfer-input').forEach(i => {
+      data.transfers.push(i.value);
+    });
+
+    localStorage.setItem('finance_master_data', JSON.stringify(data));
+  }
+
+  // ===== NEW FUNCTION: Load data from LocalStorage =====
+  function loadData(){
+    const raw = localStorage.getItem('finance_master_data');
+    if(!raw) {
+      // If no data exists, create default 3 empty rows as before
+      for(let i=0;i<3;i++) addTransferRow();
+      return;
+    }
+    
+    try {
+      const data = JSON.parse(raw);
+      if(data.coinsPerStack) $('coinsPerStack').value = data.coinsPerStack;
+      if(data.systemAmount) $('systemAmount').value = data.systemAmount;
+
+      // Load cash denoms
+      if(data.denoms && data.denoms.length) {
+        const rows = document.querySelectorAll('.denom-row');
+        data.denoms.forEach((d, idx) => {
+          if(rows[idx]) {
+            rows[idx].querySelector('.stacks').value = d.stacks || '';
+            rows[idx].querySelector('.pieces').value = d.pieces || '';
+          }
+        });
+      }
+
+      // Load transfer rows
+      if(data.transfers && data.transfers.length) {
+        $('transferList').innerHTML = ''; // clear initial list
+        data.transfers.forEach(val => {
+          addTransferRow(val);
+        });
+      } else {
+        for(let i=0;i<3;i++) addTransferRow();
+      }
+
+    } catch(e) {
+      console.error("Error loading saved data", e);
+      for(let i=0;i<3;i++) addTransferRow();
+    }
+  }
+
   // Handle Global Keys (Enter Navigation)
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -434,6 +503,7 @@
       const isLast = e.target === allTr[allTr.length - 1];
       if (val !== '' && isLast) {
         addTransferRow('', true);
+        saveData();
       } else if (val === '' && isLast) {
         $('systemAmount').focus();
       } else if (!isLast) {
@@ -448,19 +518,32 @@
   });
 
   // Wire events
-  document.querySelectorAll('.denom-input').forEach(i=> i.addEventListener('input', calcCash));
-  $('coinsPerStack').addEventListener('input', calcCash);
+  document.querySelectorAll('.denom-input').forEach(i=> i.addEventListener('input', () => {
+    calcCash();
+    saveData();
+  }));
+  
+  $('coinsPerStack').addEventListener('input', () => {
+    calcCash();
+    saveData();
+  });
   
   $('systemAmount').addEventListener('input', (e) => {
     formatInputWithComma(e.target);
     updateRecon();
+    saveData();
   });
 
-  $('addTransfer').addEventListener('click', ()=>{ addTransferRow('', true); });
+  $('addTransfer').addEventListener('click', ()=>{ 
+    addTransferRow('', true); 
+    saveData();
+  });
 
-  // Initial transfer rows
-  for(let i=0;i<3;i++) addTransferRow();
-  calcCash(); calcTransfer();
+  // ===== INITIALIZE APPLICATION =====
+  // Load saved data first, then run calculations
+  loadData();
+  calcCash(); 
+  calcTransfer();
 
   // Toast
   function toast(msg){
@@ -522,14 +605,25 @@
     }
   });
 
-  // Reset
+  // Reset Button (Clear UI and LocalStorage)
   $('btnReset').addEventListener('click', ()=>{
-    if(!confirm('ต้องการล้างข้อมูลทั้งหมด?')) return;
+    if(!confirm('ต้องการล้างข้อมูลทั้งหมดเพื่อเริ่มวันใหม่ใช่หรือไม่?')) return;
+    
+    // Clear LocalStorage
+    localStorage.removeItem('finance_master_data');
+    
+    // Reset UI Inputs
     document.querySelectorAll('.denom-input').forEach(i=> i.value='');
-    document.querySelectorAll('.transfer-input').forEach(i=> i.value='');
     $('systemAmount').value='';
-    calcCash(); calcTransfer();
-    toast('ล้างข้อมูลแล้ว');
+    
+    // Reset transfers back to 3 empty rows
+    $('transferList').innerHTML = '';
+    for(let i=0;i<3;i++) addTransferRow();
+    
+    // Re-calculate
+    calcCash(); 
+    calcTransfer();
+    toast('ล้างข้อมูลเก่าในระบบเรียบร้อยแล้ว');
   });
 </script>
 </body>
