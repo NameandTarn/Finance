@@ -77,9 +77,7 @@
   .card-body{padding:16px 18px;flex:1;display:flex;flex-direction:column}
 
   /* ===== Stack option ===== */
-  .stack-options{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
   .pill-row{display:flex;align-items:center;justify-content:space-between;background:#f8fafc;border:1px solid var(--line-2);border-radius:10px;padding:10px 14px;margin-bottom:14px}
-  .stack-options .pill-row{margin-bottom:0}
   .pill-row .lab{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:8px}
   .stack-input{width:64px;padding:6px 8px;text-align:center;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:'Kanit',sans-serif;outline:none;background:#fff}
   .stack-input:focus{border-color:var(--brand)}
@@ -142,7 +140,6 @@
 <body>
 <div class="app">
 
-  <!-- Top bar -->
   <div class="topbar">
     <div class="brand">
       <div class="brand-mark"><i class="ti ti-wallet"></i></div>
@@ -154,7 +151,6 @@
     <div class="date-pill"><i class="ti ti-calendar-event"></i><span id="todayDate"></span></div>
   </div>
 
-  <!-- Hero / Reconciliation -->
   <section class="hero">
     <div class="hero-head">
       <h1>ตรวจสอบยอดเงินประจำวัน</h1>
@@ -189,10 +185,8 @@
     </div>
   </section>
 
-  <!-- Two columns -->
   <div class="cols">
 
-    <!-- Cash card -->
     <div class="card">
       <div class="card-head">
         <div class="card-icon cash"><i class="ti ti-coins"></i></div>
@@ -202,15 +196,9 @@
         </div>
       </div>
       <div class="card-body">
-        <div class="stack-options">
-          <div class="pill-row">
-            <span class="lab"><i class="ti ti-cash-banknote"></i> ธนบัตรต่อกอง</span>
-            <input id="billsPerStack" class="stack-input" type="number" min="1" value="10">
-          </div>
-          <div class="pill-row">
-            <span class="lab"><i class="ti ti-stack-2"></i> เหรียญต่อกอง</span>
-            <input id="coinsPerStack" class="stack-input" type="number" min="1" value="10">
-          </div>
+        <div class="pill-row">
+          <span class="lab"><i class="ti ti-stack-2"></i> เหรียญต่อกอง</span>
+          <input id="coinsPerStack" class="stack-input" type="number" min="1" value="10">
         </div>
 
         <div class="denom-head">
@@ -233,7 +221,6 @@
       </div>
     </div>
 
-    <!-- Transfer card -->
     <div class="card">
       <div class="card-head">
         <div class="card-icon transfer"><i class="ti ti-receipt"></i></div>
@@ -253,10 +240,9 @@
     </div>
   </div>
 
-  <!-- Actions -->
   <div class="actions">
     <button class="btn btn-primary" id="btnCopy"><i class="ti ti-clipboard-check"></i> คัดลอกรายงานสรุป</button>
-    <button class="btn btn-ghost" id="btnReset"><i class="ti ti-refresh"></i> ล้างข้อมูล</button>
+    <button class="btn btn-ghost" id="btnReset"><i class="ti ti-refresh"></i> ล้างข้อมูลเพื่อเริ่มวันใหม่</button>
   </div>
 </div>
 
@@ -312,7 +298,6 @@
 
   // Cash calc
   function calcCash(){
-    const billsPerStack = parseInt($('billsPerStack').value) || 0;
     const coinsPerStack = parseInt($('coinsPerStack').value) || 0;
     let total = 0;
     document.querySelectorAll('.denom-row').forEach(row=>{
@@ -328,8 +313,7 @@
         count = stacks * coinsPerStack + pieces;
         stacksEl.classList.toggle('dim', coinsPerStack <= 0);
       } else {
-        count = stacks * billsPerStack + pieces;
-        stacksEl.classList.toggle('dim', billsPerStack <= 0);
+        count = stacks * 100 + pieces;
       }
       const sub = count * v;
       subEl.textContent = fmt(sub);
@@ -358,11 +342,17 @@
     input.addEventListener('input', (e) => {
       formatInputWithComma(e.target);
       calcTransfer();
+      saveData(); // Save on type
     });
     
     input.addEventListener('keydown', handleTransferKey);
     
-    row.querySelector('.transfer-del').addEventListener('click', ()=>{ row.remove(); renumberTransfers(); calcTransfer(); });
+    row.querySelector('.transfer-del').addEventListener('click', ()=>{ 
+      row.remove(); 
+      renumberTransfers(); 
+      calcTransfer(); 
+      saveData(); // Save on delete
+    });
     list.appendChild(row);
     if(shouldFocus) input.focus();
   }
@@ -415,6 +405,75 @@
     }
   }
 
+  // ===== NEW FUNCTION: Save data to LocalStorage =====
+  function saveData(){
+    const data = {
+      coinsPerStack: $('coinsPerStack').value,
+      systemAmount: $('systemAmount').value,
+      denoms: [],
+      transfers: []
+    };
+
+    // Save cash denoms
+    document.querySelectorAll('.denom-row').forEach(row => {
+      const stacksEl = row.querySelector('.stacks');
+      const piecesEl = row.querySelector('.pieces');
+      data.denoms.push({
+        val: stacksEl.dataset.val,
+        stacks: stacksEl.value,
+        pieces: piecesEl.value
+      });
+    });
+
+    // Save transfer rows
+    document.querySelectorAll('.transfer-input').forEach(i => {
+      data.transfers.push(i.value);
+    });
+
+    localStorage.setItem('finance_master_data', JSON.stringify(data));
+  }
+
+  // ===== NEW FUNCTION: Load data from LocalStorage =====
+  function loadData(){
+    const raw = localStorage.getItem('finance_master_data');
+    if(!raw) {
+      // If no data exists, create default 3 empty rows as before
+      for(let i=0;i<3;i++) addTransferRow();
+      return;
+    }
+    
+    try {
+      const data = JSON.parse(raw);
+      if(data.coinsPerStack) $('coinsPerStack').value = data.coinsPerStack;
+      if(data.systemAmount) $('systemAmount').value = data.systemAmount;
+
+      // Load cash denoms
+      if(data.denoms && data.denoms.length) {
+        const rows = document.querySelectorAll('.denom-row');
+        data.denoms.forEach((d, idx) => {
+          if(rows[idx]) {
+            rows[idx].querySelector('.stacks').value = d.stacks || '';
+            rows[idx].querySelector('.pieces').value = d.pieces || '';
+          }
+        });
+      }
+
+      // Load transfer rows
+      if(data.transfers && data.transfers.length) {
+        $('transferList').innerHTML = ''; // clear initial list
+        data.transfers.forEach(val => {
+          addTransferRow(val);
+        });
+      } else {
+        for(let i=0;i<3;i++) addTransferRow();
+      }
+
+    } catch(e) {
+      console.error("Error loading saved data", e);
+      for(let i=0;i<3;i++) addTransferRow();
+    }
+  }
+
   // Handle Global Keys (Enter Navigation)
   document.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -444,6 +503,7 @@
       const isLast = e.target === allTr[allTr.length - 1];
       if (val !== '' && isLast) {
         addTransferRow('', true);
+        saveData();
       } else if (val === '' && isLast) {
         $('systemAmount').focus();
       } else if (!isLast) {
@@ -458,20 +518,32 @@
   });
 
   // Wire events
-  document.querySelectorAll('.denom-input').forEach(i=> i.addEventListener('input', calcCash));
-  $('billsPerStack').addEventListener('input', calcCash);
-  $('coinsPerStack').addEventListener('input', calcCash);
+  document.querySelectorAll('.denom-input').forEach(i=> i.addEventListener('input', () => {
+    calcCash();
+    saveData();
+  }));
+  
+  $('coinsPerStack').addEventListener('input', () => {
+    calcCash();
+    saveData();
+  });
   
   $('systemAmount').addEventListener('input', (e) => {
     formatInputWithComma(e.target);
     updateRecon();
+    saveData();
   });
 
-  $('addTransfer').addEventListener('click', ()=>{ addTransferRow('', true); });
+  $('addTransfer').addEventListener('click', ()=>{ 
+    addTransferRow('', true); 
+    saveData();
+  });
 
-  // Initial transfer rows
-  for(let i=0;i<3;i++) addTransferRow();
-  calcCash(); calcTransfer();
+  // ===== INITIALIZE APPLICATION =====
+  // Load saved data first, then run calculations
+  loadData();
+  calcCash(); 
+  calcTransfer();
 
   // Toast
   function toast(msg){
@@ -533,14 +605,25 @@
     }
   });
 
-  // Reset
+  // Reset Button (Clear UI and LocalStorage)
   $('btnReset').addEventListener('click', ()=>{
-    if(!confirm('ต้องการล้างข้อมูลทั้งหมด?')) return;
+    if(!confirm('ต้องการล้างข้อมูลทั้งหมดเพื่อเริ่มวันใหม่ใช่หรือไม่?')) return;
+    
+    // Clear LocalStorage
+    localStorage.removeItem('finance_master_data');
+    
+    // Reset UI Inputs
     document.querySelectorAll('.denom-input').forEach(i=> i.value='');
-    document.querySelectorAll('.transfer-input').forEach(i=> i.value='');
     $('systemAmount').value='';
-    calcCash(); calcTransfer();
-    toast('ล้างข้อมูลแล้ว');
+    
+    // Reset transfers back to 3 empty rows
+    $('transferList').innerHTML = '';
+    for(let i=0;i<3;i++) addTransferRow();
+    
+    // Re-calculate
+    calcCash(); 
+    calcTransfer();
+    toast('ล้างข้อมูลเก่าในระบบเรียบร้อยแล้ว');
   });
 </script>
 </body>
