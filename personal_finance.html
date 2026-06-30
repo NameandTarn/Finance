@@ -1101,18 +1101,21 @@
             } else {
                 txData.forEach(tx => {
                     const amount = parseFloat(tx.amount) || 0;
-                    if (tx.type === 'Income') totalIncome += amount;
-                    else if (tx.type === 'Expense') {
+                    if (tx.type === 'Income') {
+                        totalIncome += amount;
+                    } else if (tx.type === 'Expense' || tx.type === 'Debt') {
                         totalExpense += amount;
-                        // แยก Needs/Wants เพื่อทำกราฟสรุปสัดส่วน
-                        const bType = (tx.categories && tx.categories.budget_type) ? tx.categories.budget_type : '';
-                        if (bType.includes('Needs')) totalNeeds += amount;
-                        else if (bType.includes('Wants')) totalWants += amount;
+                        if (tx.type === 'Expense') {
+                            // แยก Needs/Wants เพื่อทำกราฟสรุปสัดส่วน
+                            const bType = (tx.categories && tx.categories.budget_type) ? tx.categories.budget_type : '';
+                            if (bType.includes('Needs')) totalNeeds += amount;
+                            else if (bType.includes('Wants')) totalWants += amount;
+                        }
                     }
 
                     // ป้องกันความปลอดภัยกรณี categories หรือ accounts มีค่า Null
-                    const categoryName = (tx.categories && tx.categories.name) ? tx.categories.name : '-';
-                    const budgetType = (tx.categories && tx.categories.budget_type) ? tx.categories.budget_type : '';
+                    const categoryName = (tx.type === 'Debt') ? 'ชำระหนี้' : ((tx.categories && tx.categories.name) ? tx.categories.name : '-');
+                    const budgetType = (tx.type === 'Debt') ? 'Debt' : ((tx.categories && tx.categories.budget_type) ? tx.categories.budget_type : '');
                     
                     let accountDisplay = '-';
                     if (tx.type === 'Transfer') {
@@ -1381,7 +1384,8 @@
         }
 
         async function updateDebtPayment(debtId, amount) {
-            if (!debtId || amount <= 0) return;
+            const payment = parseFloat(amount);
+            if (!debtId || isNaN(payment) || payment <= 0) return;
             const { data: { user } } = await supabaseClient.auth.getUser();
             if (!user) return;
 
@@ -1397,7 +1401,7 @@
 
             const currentPaid = parseFloat(debt.paid_amount || 0);
             const totalAmount = parseFloat(debt.total_amount || 0);
-            const newPaid = Math.min(totalAmount, currentPaid + amount);
+            const newPaid = Math.min(totalAmount, currentPaid + payment);
             const newStatus = newPaid >= totalAmount ? 'completed' : 'active';
 
             const { error } = await supabaseClient.from('debts')
@@ -1406,7 +1410,11 @@
                 .eq('user_id', user.id);
             if (error) {
                 console.error('อัปเดตการชำระหนี้ล้มเหลว', error);
+                return;
             }
+
+            // กรณีต้องการรีเฟรชข้อมูลในหน้า transaction modal หรือ list ทันที
+            await loadDebtOptions();
         }
 
         async function loadCategories() {
@@ -1680,6 +1688,10 @@
             const amount = parseFloat(document.getElementById("tx-amount").value);
             let note = document.getElementById("tx-note").value;
             
+            if (isNaN(amount) || amount <= 0) {
+                return alert('กรุณากรอกจำนวนเงินที่ถูกต้อง');
+            }
+
             const categorySelect = document.getElementById("tx-category");
             const category_id = (type !== 'Transfer' && type !== 'Debt' && categorySelect && categorySelect.value) ? categorySelect.value : null;
             const debtSelect = document.getElementById('tx-debt');
@@ -1793,5 +1805,3 @@
     </script>
 </body>
 </html>
-```
-eof
